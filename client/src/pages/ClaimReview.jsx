@@ -6,22 +6,21 @@ import { formatCurrency, formatDate, formatDateTime, confidenceLabel, confidence
 import StatusBadge from '../components/StatusBadge'
 import ValidationChecks from '../components/ValidationChecks'
 import Spinner from '../components/Spinner'
+import Toast from '../components/Toast'
+import { useToast } from '../hooks/useToast'
 
 const CATEGORIES = ['Travel', 'Meals', 'Accommodation', 'Client Entertainment', 'Office Supplies', 'Communication', 'Other']
 
 export default function ClaimReview() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { toast, show: showToast, dismiss } = useToast()
+
   const [claim, setClaim] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-
-  // Action states
   const [actionLoading, setActionLoading] = useState(false)
-  const [actionError, setActionError] = useState(null)
-  const [actionSuccess, setActionSuccess] = useState(null)
 
-  // Modal states
   const [showReject, setShowReject] = useState(false)
   const [showClarification, setShowClarification] = useState(false)
   const [showOverride, setShowOverride] = useState(false)
@@ -37,6 +36,7 @@ export default function ClaimReview() {
 
   async function loadClaim() {
     setLoading(true)
+    setError(null)
     try {
       const data = await api.getClaimById(id)
       setClaim(data)
@@ -47,79 +47,59 @@ export default function ClaimReview() {
     }
   }
 
-  function showMessage(msg) {
-    setActionSuccess(msg)
-    setTimeout(() => setActionSuccess(null), 4000)
-  }
-
-  async function handleApprove() {
+  async function runAction(fn, successMsg) {
     setActionLoading(true)
-    setActionError(null)
     try {
-      const updated = await api.approveClaim(id, { reviewer: 'Reviewer' })
+      const updated = await fn()
       setClaim(updated)
-      showMessage('Claim approved.')
+      showToast(successMsg, 'success')
     } catch (err) {
-      setActionError(err.message)
+      showToast(err.message, 'error')
     } finally {
       setActionLoading(false)
     }
   }
 
-  async function handleReject() {
+  function handleApprove() {
+    runAction(
+      () => api.approveClaim(id, { reviewer: 'Reviewer' }),
+      'Claim approved.'
+    )
+  }
+
+  function handleReject() {
     if (!rejectReason.trim()) return
-    setActionLoading(true)
-    setActionError(null)
-    try {
+    runAction(async () => {
       const updated = await api.rejectClaim(id, { reason: rejectReason, reviewer: 'Reviewer' })
-      setClaim(updated)
       setShowReject(false)
       setRejectReason('')
-      showMessage('Claim rejected.')
-    } catch (err) {
-      setActionError(err.message)
-    } finally {
-      setActionLoading(false)
-    }
+      return updated
+    }, 'Claim rejected.')
   }
 
-  async function handleClarification() {
+  function handleClarification() {
     if (!clarificationMsg.trim()) return
-    setActionLoading(true)
-    setActionError(null)
-    try {
+    runAction(async () => {
       const updated = await api.requestClarification(id, { message: clarificationMsg, reviewer: 'Reviewer' })
-      setClaim(updated)
       setShowClarification(false)
       setClarificationMsg('')
-      showMessage('Clarification requested.')
-    } catch (err) {
-      setActionError(err.message)
-    } finally {
-      setActionLoading(false)
-    }
+      return updated
+    }, 'Clarification requested.')
   }
 
-  async function handleOverride() {
+  function handleOverride() {
     if (!overrideCategory || !overrideReason.trim()) return
-    setActionLoading(true)
-    setActionError(null)
-    try {
+    runAction(async () => {
       const updated = await api.overrideClassification(id, {
         newCategory: overrideCategory,
         reason: overrideReason,
         reviewer: 'Reviewer',
       })
-      setClaim(updated)
       setShowOverride(false)
       setOverrideCategory('')
       setOverrideReason('')
-      showMessage('AI classification overridden.')
-    } catch (err) {
-      setActionError(err.message)
-    } finally {
-      setActionLoading(false)
-    }
+      return updated
+    }, 'AI classification overridden.')
   }
 
   if (loading) return <div className="flex items-center justify-center h-64"><Spinner size="lg" /></div>
@@ -132,24 +112,17 @@ export default function ClaimReview() {
 
   return (
     <div className="max-w-3xl">
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
+
       <div className="flex items-center gap-2 mb-5">
         <button onClick={() => navigate('/claims')} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
           <ChevronLeft className="h-4 w-4" /> Claims
         </button>
         <span className="text-gray-300">/</span>
         <span className="text-sm text-gray-700 font-medium">{claim.claimant}</span>
+        <span className="text-gray-300">/</span>
+        <span className="text-sm text-gray-500">{formatCurrency(claim.amount, claim.currency)}</span>
       </div>
-
-      {actionSuccess && (
-        <div className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-4 py-2.5">
-          {actionSuccess}
-        </div>
-      )}
-      {actionError && (
-        <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-4 py-2.5">
-          {actionError}
-        </div>
-      )}
 
       {/* Claim Details */}
       <Section title="Claim Details" aside={<StatusBadge status={claim.status} size="md" />}>
@@ -178,7 +151,7 @@ export default function ClaimReview() {
               to={`/claims/${claim.duplicateOf._id || claim.duplicateOf}`}
               className="underline text-amber-700 hover:text-amber-900 inline-flex items-center gap-1"
             >
-              View original claim <ExternalLink className="h-3 w-3" />
+              View original <ExternalLink className="h-3 w-3" />
             </Link>
           </div>
         </div>
@@ -187,20 +160,17 @@ export default function ClaimReview() {
       {/* AI Classification */}
       <Section title="AI Classification" className="mt-4">
         {claim.aiUnavailable ? (
-          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-            AI review was unavailable. Deterministic validation results are authoritative.
+          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2.5">
+            AI review was unavailable at submission time. Deterministic validation results are shown below.
           </div>
         ) : (
           <div className="space-y-3 text-sm">
             <div className="grid grid-cols-3 gap-4">
               <Field label="Suggested Category" value={effectiveCategory} />
-              <Field
-                label="Confidence"
-                value={confidence !== null ? `${Math.round(confidence * 100)}%` : '—'}
-              />
+              <Field label="Confidence" value={confidence !== null ? `${Math.round(confidence * 100)}%` : '—'} />
               <div>
                 <dt className="text-xs font-medium text-gray-500 mb-1">Classification</dt>
-                <dd className={`font-medium ${confidenceColor(confidence)}`}>
+                <dd className={`font-medium text-sm ${confidenceColor(confidence)}`}>
                   {confidenceLabel(confidence)}
                 </dd>
               </div>
@@ -214,10 +184,10 @@ export default function ClaimReview() {
             )}
 
             {claim.overriddenCategory && (
-              <div className="mt-2 border border-blue-200 bg-blue-50 rounded px-3 py-2">
-                <p className="text-xs font-medium text-blue-700 mb-0.5">Reviewer Override</p>
+              <div className="border border-blue-200 bg-blue-50 rounded px-3 py-2.5">
+                <p className="text-xs font-semibold text-blue-700 mb-0.5 uppercase tracking-wide">Reviewer Override Applied</p>
                 <p className="text-sm text-blue-800">
-                  AI classification was overridden to <strong>{claim.overriddenCategory}</strong>.
+                  Category changed to <strong>{claim.overriddenCategory}</strong>
                 </p>
                 <p className="text-sm text-blue-700 mt-1">Reason: {claim.overrideReason}</p>
               </div>
@@ -226,8 +196,13 @@ export default function ClaimReview() {
             {claim.aiMissingInfo?.length > 0 && (
               <div>
                 <dt className="text-xs font-medium text-gray-500 mb-1">Missing Information</dt>
-                <ul className="list-disc list-inside space-y-0.5 text-amber-700">
-                  {claim.aiMissingInfo.map((item, i) => <li key={i}>{item}</li>)}
+                <ul className="space-y-0.5">
+                  {claim.aiMissingInfo.map((item, i) => (
+                    <li key={i} className="text-amber-700 flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                      {item}
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
@@ -258,7 +233,7 @@ export default function ClaimReview() {
       {/* Policy Evidence */}
       {claim.policyEvidence && (
         <Section title="Policy Evidence" className="mt-4">
-          <blockquote className="border-l-2 border-gray-300 pl-4 text-sm text-gray-700 italic">
+          <blockquote className="border-l-2 border-gray-300 pl-4 text-sm text-gray-700 italic leading-relaxed">
             {claim.policyEvidence}
           </blockquote>
           {claim.policyReference && (
@@ -275,32 +250,33 @@ export default function ClaimReview() {
               {actionLoading ? <Spinner size="sm" /> : null}
               Approve
             </button>
-            <button className="btn-danger" onClick={() => setShowReject(true)} disabled={actionLoading}>
+            <button className="btn-danger" onClick={() => { setShowReject(true); setShowClarification(false); setShowOverride(false) }} disabled={actionLoading}>
               Reject
             </button>
-            <button className="btn-warning" onClick={() => setShowClarification(true)} disabled={actionLoading}>
+            <button className="btn-warning" onClick={() => { setShowClarification(true); setShowReject(false); setShowOverride(false) }} disabled={actionLoading}>
               Request Clarification
             </button>
             {!claim.overriddenCategory && (
-              <button className="btn-secondary" onClick={() => setShowOverride(true)} disabled={actionLoading}>
+              <button className="btn-secondary" onClick={() => { setShowOverride(true); setShowReject(false); setShowClarification(false) }} disabled={actionLoading}>
                 Override Classification
               </button>
             )}
           </div>
 
-          {/* Reject form */}
           {showReject && (
-            <div className="mt-4 border border-gray-200 rounded p-4 space-y-3 bg-red-50">
-              <p className="text-sm font-medium text-gray-800">Rejection Reason *</p>
+            <div className="mt-4 border border-red-200 rounded p-4 space-y-3 bg-red-50">
+              <p className="text-sm font-medium text-gray-800">Rejection Reason <span className="text-red-500">*</span></p>
               <textarea
                 rows={3}
                 className="input resize-none"
                 placeholder="Explain why this claim is being rejected."
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
+                autoFocus
               />
               <div className="flex gap-2">
                 <button className="btn-danger" onClick={handleReject} disabled={!rejectReason.trim() || actionLoading}>
+                  {actionLoading ? <Spinner size="sm" /> : null}
                   Confirm Rejection
                 </button>
                 <button className="btn-secondary" onClick={() => setShowReject(false)}>Cancel</button>
@@ -308,19 +284,20 @@ export default function ClaimReview() {
             </div>
           )}
 
-          {/* Clarification form */}
           {showClarification && (
-            <div className="mt-4 border border-gray-200 rounded p-4 space-y-3 bg-amber-50">
-              <p className="text-sm font-medium text-gray-800">Clarification Message *</p>
+            <div className="mt-4 border border-amber-200 rounded p-4 space-y-3 bg-amber-50">
+              <p className="text-sm font-medium text-gray-800">Clarification Message <span className="text-red-500">*</span></p>
               <textarea
                 rows={3}
                 className="input resize-none"
                 placeholder="Describe what information is needed from the claimant."
                 value={clarificationMsg}
                 onChange={e => setClarificationMsg(e.target.value)}
+                autoFocus
               />
               <div className="flex gap-2">
                 <button className="btn-warning" onClick={handleClarification} disabled={!clarificationMsg.trim() || actionLoading}>
+                  {actionLoading ? <Spinner size="sm" /> : null}
                   Send Request
                 </button>
                 <button className="btn-secondary" onClick={() => setShowClarification(false)}>Cancel</button>
@@ -328,19 +305,18 @@ export default function ClaimReview() {
             </div>
           )}
 
-          {/* Override form */}
           {showOverride && (
             <div className="mt-4 border border-gray-200 rounded p-4 space-y-3">
               <p className="text-sm font-medium text-gray-800">Override AI Classification</p>
               <div>
-                <label className="label">New Category *</label>
+                <label className="label">New Category <span className="text-red-500">*</span></label>
                 <select className="input" value={overrideCategory} onChange={e => setOverrideCategory(e.target.value)}>
                   <option value="">Select category</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label className="label">Reason *</label>
+                <label className="label">Reason <span className="text-red-500">*</span></label>
                 <textarea
                   rows={2}
                   className="input resize-none"
@@ -355,6 +331,7 @@ export default function ClaimReview() {
                   onClick={handleOverride}
                   disabled={!overrideCategory || !overrideReason.trim() || actionLoading}
                 >
+                  {actionLoading ? <Spinner size="sm" /> : null}
                   Apply Override
                 </button>
                 <button className="btn-secondary" onClick={() => setShowOverride(false)}>Cancel</button>
@@ -366,12 +343,12 @@ export default function ClaimReview() {
 
       {isResolved && (
         <div className="mt-4 border border-gray-200 rounded p-4 text-sm text-gray-500 bg-gray-50">
-          This claim was <strong>{claim.status.toLowerCase()}</strong> on {formatDateTime(claim.reviewedAt)}
+          This claim was <strong className="text-gray-700">{claim.status.toLowerCase()}</strong> on {formatDateTime(claim.reviewedAt)}
           {claim.reviewedBy ? ` by ${claim.reviewedBy}.` : '.'}
         </div>
       )}
 
-      <div className="mt-4">
+      <div className="mt-4 mb-8">
         <Link to={`/claims/${id}/history`} className="text-sm text-gray-500 hover:text-gray-800 underline">
           View full review history →
         </Link>
@@ -396,7 +373,7 @@ function Field({ label, value }) {
   return (
     <div>
       <dt className="text-xs font-medium text-gray-500 mb-0.5">{label}</dt>
-      <dd className="text-gray-900">{value || '—'}</dd>
+      <dd className="text-sm text-gray-900">{value || '—'}</dd>
     </div>
   )
 }
