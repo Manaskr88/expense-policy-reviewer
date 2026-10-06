@@ -9,6 +9,11 @@ node_modules/
 server/.env
 client/.env.local
 
+# Service account credentials — never commit
+server/service-account.json
+service-account.json
+*.json.key
+
 # Build output
 client/dist/
 client/build/

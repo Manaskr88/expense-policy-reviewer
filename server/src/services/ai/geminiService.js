@@ -1,40 +1,58 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import { buildSystemInstruction, buildReviewPrompt } from './aiPrompt.js'
 
 const VALID_CATEGORIES = ['Travel', 'Meals', 'Accommodation', 'Client Entertainment', 'Office Supplies', 'Communication', 'Other']
 const VALID_FINDINGS = ['COMPLIANT', 'NEEDS_CLARIFICATION', 'NEEDS_REVIEW', 'NON_COMPLIANT']
 
-let genAI = null
-
-function getClient() {
-  if (!genAI) {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY is not set')
-    }
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  }
-  return genAI
-}
+// gemini-2.5-flash is the current free model as of 2026
+const GEMINI_MODEL = 'gemini-2.5-flash'
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 // AI classification is advisory; deterministic policy checks remain authoritative.
 export async function reviewClaimWithAI(claim, policy, validationResults) {
   try {
-    const client = getClient()
-    const model = client.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction: buildSystemInstruction(),
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not set')
+
+    // AQ. keys are the new Google AI Studio format — passed as x-goog-api-key header
+    const url = `${GEMINI_BASE}/${GEMINI_MODEL}:generateContent`
+
+    const requestBody = {
+      system_instruction: {
+        parts: [{ text: buildSystemInstruction() }]
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: buildReviewPrompt(claim, policy, validationResults) }]
+        }
+      ],
       generationConfig: {
         responseMimeType: 'application/json',
         temperature: 0.2,
+      }
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
       },
+      body: JSON.stringify(requestBody)
     })
 
-    const prompt = buildReviewPrompt(claim, policy, validationResults)
-    const result = await model.generateContent(prompt)
-    const text = result.response.text()
+    if (!res.ok) {
+      const errBody = await res.text()
+      throw new Error(`Gemini API ${res.status}: ${errBody}`)
+    }
+
+    const data = await res.json()
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!text) throw new Error('Empty response from Gemini')
 
     const parsed = JSON.parse(text)
     return sanitizeAIResponse(parsed)
+
   } catch (err) {
     console.error('Gemini review failed:', err.message)
     return { unavailable: true, error: err.message }
