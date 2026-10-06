@@ -4,7 +4,8 @@ An internal tool that reviews employee expense claims against organisational pol
 
 Built as part of the Aggroso candidate assessment (Problem 1 — Medium difficulty).
 
-Live Demo: [ADD DEPLOYED URL]  
+Live Demo: https://expense-policy-reviewer.onrender.com  
+API: https://expense-policy-reviewer-api.onrender.com  
 GitHub: https://github.com/Manaskr88/expense-policy-reviewer
 
 ---

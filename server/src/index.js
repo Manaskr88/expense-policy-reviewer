@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 5000
 
 const allowedOrigins = [
   'http://localhost:5173',
+  'https://expense-policy-reviewer.onrender.com',
   process.env.CLIENT_URL,
 ].filter(Boolean)
 

@@ -361,28 +361,30 @@ After a reviewer acts (approve/reject), the status changes to APPROVED or REJECT
 ## 18. Deployment Architecture
 
 ```
-                    ┌─────────────────────┐
-                    │   Vercel / Netlify   │
-                    │   (React frontend)   │
-                    │   VITE_API_URL →     │
-                    └──────────┬──────────┘
-                               │ HTTPS
-                    ┌──────────▼──────────┐
-                    │  Render / Railway   │
-                    │  (Express backend)  │
-                    │  GEMINI_API_KEY      │
-                    │  MONGODB_URI         │
-                    └──────────┬──────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │   MongoDB Atlas     │
-                    │   (database)        │
-                    └─────────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │  Google Gemini API  │
-                    │  (external)         │
-                    └─────────────────────┘
+                    ┌─────────────────────────────────────────┐
+                    │   Render Static Site                    │
+                    │   https://expense-policy-reviewer       │
+                    │         .onrender.com                   │
+                    │   VITE_API_URL →                        │
+                    └──────────────────┬──────────────────────┘
+                                       │ HTTPS
+                    ┌──────────────────▼──────────────────────┐
+                    │   Render Web Service                    │
+                    │   https://expense-policy-reviewer-api   │
+                    │         .onrender.com                   │
+                    │   GEMINI_API_KEY                        │
+                    │   MONGODB_URI                           │
+                    └──────────────────┬──────────────────────┘
+                                       │
+                    ┌──────────────────▼──────────────────────┐
+                    │   MongoDB Atlas                         │
+                    │   expense-policy cluster                │
+                    └─────────────────────────────────────────┘
+                                       │
+                    ┌──────────────────▼──────────────────────┐
+                    │   Google Gemini API                     │
+                    │   gemini-2.5-flash (free tier)          │
+                    └─────────────────────────────────────────┘
 ```
 
 The frontend is a static build — zero server cost. The backend is a small Node.js process — fits comfortably on a free tier. MongoDB Atlas has a free tier sufficient for this application.
